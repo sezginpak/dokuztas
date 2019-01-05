@@ -1,7 +1,8 @@
 import argparse
 import requests
 from flask import Flask, jsonify, request
-
+import sqlite3
+import random
 from dokuztas.blockchain import Blockchain, PendingBlock
 from dokuztas.exceptions import *
 from dokuztas._internals import _log, MiningThread
@@ -161,19 +162,66 @@ app = Flask(__name__)
 active_node = None
 curr_port = None
 
+class NasComponent(object):
+    def __init__(self):
+        self.nodes = []
 
-def get_other_nodes():
-    http_response = requests.get(
-        'http://localhost:5001/list')
+    def add_node(self, node):
+        if node not in self.nodes:
+            self.nodes.append(node)
+
+    def get_nodes(self):
+        return self.nodes
+
+nasComponent = None
+
+
+@app.route('/connect', methods=['POST'])
+def new_node_connected():
+    """
+    Ağa yeni bir node eklendi!
+    """
+    try:
+        new_node = request.json['port']
+        nasComponent.add_node(new_node)
+        return jsonify({'status': 'ok'})
+    except Exception as exc:
+        return jsonify({'message': exc.message})
+
+
+@app.route('/list', methods=['GET'])
+def active_node_list():
+    """
+    Bir node (kim olduğunun bir önemi yok), ağdaki diğer node'larla haberleşmek için node listesini istiyor!
+
+    :return tüm tree'nin hash'i. Node listesini string array olarak döner.
+    """
+    try:
+        nodes = nasComponent.get_nodes()
+        return jsonify({'nodes': nodes})
+    except Exception as exc:
+        return jsonify({'message': exc.message})
+
+
+
+
+
+def get_other_nodes(ip='localhost:', port='5001'):
+    a='http://'
+    b='/list'
+    c=a+ip+port+b
+    http_response = requests.get(c)
     response = http_response.json()
     nodes = response["nodes"]
     return nodes
 
 
-def connect_to_network(port):
+def connect_to_network(port, ip='localhost:', por='5001'):
+    a='http://'
+    b='/list'
+    c=a+ip+por+b
     data = {'port': port}
-    http_response = requests.post(
-        'http://localhost:5001/connect', json=data)
+    http_response = requests.post(c, json=data)
     if http_response.status_code == 200:
         _log('info', 'Blockchain ağına bağlanıldı.')
     else:
@@ -301,9 +349,20 @@ def command_line_runner():
 
     global curr_port
     curr_port = current_port
-    connect_to_network(current_port)
+    con=sqlite3.connect(database="dokuztas/ip.db")
+    cur=con.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS node(port)")
+    cur.execute("INSERT INTO  node VALUES ('%s')"% current_port)
+    a = cur.execute("SELECT * FROM node ORDER BY RANDOM() LIMIT 1")
+    a=cur.fetchall()
+    a=random.choice(a)
+    a=random.choice(a)
+    con.commit()
+    con.close()
+    app.run(debug=False, port=int(current_port))
+    connect_to_network(current_port, por=a)
 
-    nodes = get_other_nodes()
+    nodes = get_other_nodes(port=a)
     if len(nodes) == 1:
         # mevcut node sayısı 1 ise, ilk node network'e bağlanmıştır.
         # bu durumda chain'in ilk kez yaratılması gerekir, doğal olarak da genesis'in.
@@ -313,6 +372,7 @@ def command_line_runner():
         # ağa 1. olarak dahil olmayan tüm node'lar, giriş anlarında mevcut chain'i ve block'ları
         # yüklemeleri gerekmektedir.
         load_chain(current_port, nodes=nodes)
+        #pass
 
     # todo: ağa yeni dahil olan node bir miner ise, önceden ağa girmiş olan node'lardan,
     # bekleyen block'ları ve tx'leri alması gerekiyor ve hemen mining'e başlaması gerekiyor.
@@ -320,5 +380,19 @@ def command_line_runner():
     run(current_port)
 
 
+
+
 if __name__ == '__main__':
-    command_line_runner()
+    nasComponent = NasComponent()
+    con=sqlite3.connect(database="dokuztas/ip.db")
+    cur=con.cursor()
+    a=cur.fetchall()
+    a=random.choice(a)
+    con.close()
+    for i in a:
+        try:
+            command_line_runner()
+        except ConnectionError():
+            continue
+        except OSError():
+            continue

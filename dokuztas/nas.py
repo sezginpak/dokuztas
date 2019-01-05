@@ -5,8 +5,11 @@ Ağa bağlanan node'ların birbirinden haberdar olması için kullanılır.
 
 Ağı başlatmadan önce ayağa kalkmış olması gerekmektedir. 5001 portundan sunulur.
 Node.py değiştirilmeden, port bilgisi de değiştirilmemelidir.
+
+Ağ ayağa kalktıktan sonra kapatabilirsiniz.
 """
 from flask import Flask, jsonify, request
+import sqlite3
 
 
 class NasComponent(object):
